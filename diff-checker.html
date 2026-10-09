@@ -1,0 +1,1435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Diff Checker</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #d8dce1;
+    --text: #1c2128;
+    --text-dim: #5b6472;
+    --accent: #2f6fed;
+    --accent-text: #ffffff;
+    --row-alt: #fafbfc;
+    --row-hover: #eef3ff;
+    --danger: #d33b3b;
+    --header-bg: #eef1f5;
+    --shadow: 0 1px 3px rgba(0,0,0,.08);
+    --add-bg: #e6ffec;
+    --add-strong: #abf2bc;
+    --add-text: #1a7f37;
+    --del-bg: #ffebe9;
+    --del-strong: #ffc1bc;
+    --del-text: #cf222e;
+    --gutter-bg: #f0f2f5;
+    --gutter-text: #8b93a1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1d22;
+      --panel: #22262c;
+      --border: #383e46;
+      --text: #e6e8eb;
+      --text-dim: #9aa3ad;
+      --accent: #5b8dfb;
+      --accent-text: #0d1117;
+      --row-alt: #262a31;
+      --row-hover: #2a3140;
+      --danger: #ff6b6b;
+      --header-bg: #2a2f36;
+      --shadow: 0 1px 3px rgba(0,0,0,.4);
+      --add-bg: #0f2a1a;
+      --add-strong: #1b5c33;
+      --add-text: #56d364;
+      --del-bg: #2c1315;
+      --del-strong: #6e2528;
+      --del-text: #ff7b72;
+      --gutter-bg: #1f2329;
+      --gutter-text: #6b7280;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.4 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  body { display: flex; flex-direction: column; }
+
+  header {
+    padding: 10px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 700; white-space: nowrap; }
+  .tabs { display: flex; gap: 4px; }
+  .tab-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .tab-btn:hover { background: var(--row-hover); color: var(--text); }
+  .tab-btn.active { background: var(--accent); color: var(--accent-text); }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .toolbar .group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding-right: 10px;
+    border-right: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .toolbar .group:last-child { border-right: none; }
+  .toolbar label.chk {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-dim);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .toolbar label.chk input { margin: 0; }
+
+  button, .file-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  button:hover, .file-btn:hover { background: var(--row-hover); }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  select {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 12.5px;
+  }
+  input[type=range] { vertical-align: middle; }
+
+  main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .view { flex: 1; min-height: 0; display: none; flex-direction: column; }
+  .view.active { display: flex; }
+
+  /* ---- Text compare input stage ---- */
+  .input-stage { flex: 1; min-height: 0; display: flex; gap: 1px; background: var(--border); }
+  .input-col { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--panel); position: relative; }
+  .input-col .col-head {
+    padding: 6px 10px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .input-col textarea {
+    flex: 1;
+    border: none;
+    resize: none;
+    padding: 10px 12px;
+    font: 12.5px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    background: transparent;
+    color: var(--text);
+    outline: none;
+  }
+  .drop-hint {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(47,111,237,.10); border: 2px dashed var(--accent); pointer-events: none;
+    color: var(--accent); font-weight: 600; font-size: 13px;
+  }
+  .input-col.dragging .drop-hint { display: flex; }
+
+  /* ---- Diff result stage ---- */
+  .result-stage { flex: 1; min-height: 0; display: none; flex-direction: column; }
+  .result-stage.active { display: flex; }
+  .stats-bar {
+    display: flex; gap: 16px; align-items: center; padding: 6px 14px;
+    background: var(--header-bg); border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--text-dim); flex-wrap: wrap;
+  }
+  .stats-bar b { color: var(--text); }
+  .stat-add { color: var(--add-text); font-weight: 700; }
+  .stat-del { color: var(--del-text); font-weight: 700; }
+  .diff-scroll-wrap { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+
+  .diff-pane { flex: 1; min-width: 0; overflow: auto; background: var(--panel); }
+  .diff-pane.right { border-left: 1px solid var(--border); }
+  .diff-unified { flex: 1; min-width: 0; overflow: auto; background: var(--panel); }
+
+  table.diff-table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  table.diff-table td {
+    vertical-align: top;
+    font: 12.5px/1.55 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 0 8px;
+  }
+  td.gutter {
+    width: 46px;
+    min-width: 46px;
+    text-align: right;
+    color: var(--gutter-text);
+    background: var(--gutter-bg);
+    user-select: none;
+    border-right: 1px solid var(--border);
+    padding: 0 8px;
+  }
+  td.marker {
+    width: 18px;
+    min-width: 18px;
+    text-align: center;
+    background: var(--gutter-bg);
+    user-select: none;
+    color: var(--text-dim);
+    font-weight: 700;
+  }
+  tr.row-add td.content, tr.row-add td.marker { background: var(--add-bg); }
+  tr.row-del td.content, tr.row-del td.marker { background: var(--del-bg); }
+  tr.row-empty td { background: var(--gutter-bg); opacity: .5; }
+  tr.row-add td.marker { color: var(--add-text); }
+  tr.row-del td.marker { color: var(--del-text); }
+  ins.tok { background: var(--add-strong); text-decoration: none; border-radius: 2px; }
+  del.tok { background: var(--del-strong); text-decoration: none; border-radius: 2px; }
+  tr:hover td { filter: brightness(0.97); }
+  @media (prefers-color-scheme: dark) {
+    tr:hover td { filter: brightness(1.12); }
+  }
+
+  td.content { position: relative; }
+  .copy-row-btn {
+    position: absolute;
+    top: 1px;
+    right: 4px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    gap: 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    cursor: pointer;
+    box-shadow: var(--shadow);
+  }
+  tr.row-add:hover td.content .copy-row-btn,
+  tr.row-del:hover td.content .copy-row-btn {
+    display: inline-flex;
+  }
+  .copy-row-btn:hover { background: var(--row-hover); color: var(--text); }
+  .copy-row-btn.copied { color: var(--add-text); border-color: var(--add-strong); }
+
+  /* ---- Review (mark as done) ---- */
+  td.content.has-review { padding-right: 58px; }
+  .review-btn {
+    position: absolute;
+    top: 1px;
+    right: 28px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+    border-radius: 50%;
+    color: transparent;
+    background: var(--panel);
+    border: 1.5px solid var(--text-dim);
+    opacity: .75;
+  }
+  .review-btn:hover { opacity: 1; color: var(--add-text); border-color: var(--add-text); }
+  tr.reviewed .review-btn { color: #fff; background: var(--add-text); border-color: var(--add-text); opacity: 1; }
+  tr.reviewed td.content, tr.reviewed td.marker { opacity: .5; }
+  tr.reviewed td.content .review-btn { opacity: 1; }
+  .hide-reviewed tr.reviewed { display: none; }
+  .review-progress b { color: var(--add-text); }
+  .stats-bar .stats-spacer { flex: 1; }
+  .stats-bar button, .stats-bar label.chk { font-size: 11.5px; padding: 2px 8px; }
+  .stats-bar label.chk { display: inline-flex; align-items: center; gap: 4px; padding: 0; cursor: pointer; }
+
+  .empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 13px; text-align: center; padding: 20px; }
+
+  /* ---- JSON / generic secondary tabs reuse same classes above ---- */
+
+  /* ---- Image compare ---- */
+  .img-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .img-drop-row { display: flex; gap: 1px; background: var(--border); }
+  .img-drop { flex: 1; background: var(--panel); min-height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; padding: 14px; text-align: center; }
+  .img-drop img { max-width: 100%; max-height: 110px; border-radius: 4px; border: 1px solid var(--border); }
+  .img-drop .lbl { font-size: 11.5px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+  .img-result { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 16px; }
+  .img-canvas-wrap { position: relative; display: inline-block; line-height: 0; box-shadow: var(--shadow); }
+  .img-canvas-wrap canvas { display: block; max-width: 100%; background: repeating-conic-gradient(#8883 0% 25%, #0000 0% 50%) 50% / 16px 16px; }
+  .img-canvas-wrap canvas.overlay-top { position: absolute; top: 0; left: 0; }
+  .img-side-by-side { display: flex; gap: 12px; }
+  .img-side-by-side figure { margin: 0; }
+  .img-side-by-side figcaption { font-size: 11.5px; color: var(--text-dim); text-align: center; margin-top: 4px; }
+
+  /* ---- Folder compare ---- */
+  .folder-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .folder-pick-row { display: flex; gap: 1px; background: var(--border); }
+  .folder-pick { flex: 1; background: var(--panel); padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .folder-pick .lbl { font-size: 11.5px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+  .folder-list-wrap { flex: 1; min-height: 0; overflow: auto; }
+  table.flist { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.flist th { text-align: left; position: sticky; top: 0; background: var(--header-bg); padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  table.flist td { padding: 5px 10px; border-bottom: 1px solid var(--border); font-family: "SFMono-Regular", Consolas, monospace; }
+  table.flist tr:hover td { background: var(--row-hover); }
+  .badge { padding: 1px 7px; border-radius: 10px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+  .badge.added { background: var(--add-bg); color: var(--add-text); }
+  .badge.removed { background: var(--del-bg); color: var(--del-text); }
+  .badge.modified { background: #fff6dd; color: #9a6700; }
+  @media (prefers-color-scheme: dark) { .badge.modified { background: #3a2f10; color: #e3b341; } }
+  .badge.same { background: var(--gutter-bg); color: var(--text-dim); }
+  .flist a.view-link { color: var(--accent); cursor: pointer; text-decoration: none; font-size: 11.5px; }
+  .flist a.view-link:hover { text-decoration: underline; }
+
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 100; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: var(--panel); border-radius: 8px; width: min(1100px, 94vw); height: min(80vh, 800px); display: flex; flex-direction: column; box-shadow: var(--shadow); overflow: hidden; }
+  .modal-head { padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-head strong { font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
+  .modal-body { flex: 1; min-height: 0; display: flex; }
+
+  .hidden { display: none !important; }
+  .small-note { font-size: 11px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Diff Checker</h1>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="text">Text Compare</button>
+    <button class="tab-btn" data-tab="json">JSON Compare</button>
+    <button class="tab-btn" data-tab="image">Image Compare</button>
+    <button class="tab-btn" data-tab="folder">Folder Compare</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ TEXT COMPARE ============ -->
+  <section class="view active" id="view-text">
+    <div class="toolbar">
+      <div class="group">
+        <button id="txtCompareBtn" class="primary">Compare ▶</button>
+        <button id="txtBackBtn" class="hidden">◀ Edit</button>
+        <button id="txtSwapBtn">⇄ Swap</button>
+        <button id="txtClearBtn">Clear</button>
+      </div>
+      <div class="group">
+        <label class="file-btn">Load left file<input type="file" id="txtFileLeft" class="hidden"></label>
+        <label class="file-btn">Load right file<input type="file" id="txtFileRight" class="hidden"></label>
+      </div>
+      <div class="group">
+        <label class="chk"><input type="checkbox" id="optIgnoreCase"> Ignore case</label>
+        <label class="chk"><input type="checkbox" id="optIgnoreWs"> Ignore whitespace</label>
+        <label class="chk"><input type="checkbox" id="optIgnoreAllWs"> Ignore all whitespace</label>
+        <label class="chk"><input type="checkbox" id="optIgnoreBlank"> Ignore blank lines</label>
+      </div>
+      <div class="group">
+        <select id="viewMode">
+          <option value="side">Side by side</option>
+          <option value="unified">Unified</option>
+        </select>
+        <select id="granularity">
+          <option value="word">Word diff</option>
+          <option value="char" selected>Character diff</option>
+          <option value="line">Line only</option>
+        </select>
+      </div>
+      <div class="group hidden" id="resultActions">
+        <button id="txtCopyBtn">Copy diff</button>
+        <button id="txtDownloadBtn">Download HTML</button>
+      </div>
+      <div class="group hidden" id="shareActions" title="The image is rendered locally in your browser. Nothing is uploaded.">
+        <span class="small-note">🔒 Share as image (local):</span>
+        <label class="chk"><input type="checkbox" id="shareChangedOnly" checked> Changed lines only (±2)</label>
+        <button id="shareCopyImgBtn">Copy image</button>
+        <button id="shareSaveImgBtn">Save PNG</button>
+        <button id="shareBase64Btn">Copy Base64</button>
+      </div>
+    </div>
+
+    <div class="input-stage" id="txtInputStage">
+      <div class="input-col" id="colLeft">
+        <div class="col-head"><span>Original</span><span class="small-note" id="leftLineCount"></span></div>
+        <textarea id="leftText" placeholder="Paste or drop the original text here…" spellcheck="false"></textarea>
+        <div class="drop-hint">Drop file to load</div>
+      </div>
+      <div class="input-col" id="colRight">
+        <div class="col-head"><span>Changed</span><span class="small-note" id="rightLineCount"></span></div>
+        <textarea id="rightText" placeholder="Paste or drop the changed text here…" spellcheck="false"></textarea>
+        <div class="drop-hint">Drop file to load</div>
+      </div>
+    </div>
+
+    <div class="result-stage" id="txtResultStage">
+      <div class="stats-bar" id="txtStats"></div>
+      <div class="diff-scroll-wrap" id="sideWrap">
+        <div class="diff-pane left" id="paneLeft"></div>
+        <div class="diff-pane right" id="paneRight"></div>
+      </div>
+      <div class="diff-unified hidden" id="unifiedWrap"></div>
+    </div>
+  </section>
+
+  <!-- ============ JSON COMPARE ============ -->
+  <section class="view" id="view-json">
+    <div class="toolbar">
+      <div class="group">
+        <button id="jsonCompareBtn" class="primary">Compare ▶</button>
+        <button id="jsonBackBtn" class="hidden">◀ Edit</button>
+        <button id="jsonSwapBtn">⇄ Swap</button>
+        <button id="jsonClearBtn">Clear</button>
+      </div>
+      <div class="group">
+        <label class="chk"><input type="checkbox" id="jsonSortKeys"> Sort keys</label>
+      </div>
+      <div class="group">
+        <select id="jsonViewMode">
+          <option value="side">Side by side</option>
+          <option value="unified">Unified</option>
+        </select>
+      </div>
+    </div>
+    <div id="jsonError" class="small-note hidden" style="color:var(--danger);padding:6px 14px;background:var(--panel);border-bottom:1px solid var(--border)"></div>
+    <div class="input-stage" id="jsonInputStage">
+      <div class="input-col" id="jsonColLeft">
+        <div class="col-head"><span>Original JSON</span></div>
+        <textarea id="jsonLeft" placeholder="Paste original JSON here…" spellcheck="false"></textarea>
+      </div>
+      <div class="input-col" id="jsonColRight">
+        <div class="col-head"><span>Changed JSON</span></div>
+        <textarea id="jsonRight" placeholder="Paste changed JSON here…" spellcheck="false"></textarea>
+      </div>
+    </div>
+    <div class="result-stage" id="jsonResultStage">
+      <div class="stats-bar" id="jsonStats"></div>
+      <div class="diff-scroll-wrap" id="jsonSideWrap">
+        <div class="diff-pane left" id="jsonPaneLeft"></div>
+        <div class="diff-pane right" id="jsonPaneRight"></div>
+      </div>
+      <div class="diff-unified hidden" id="jsonUnifiedWrap"></div>
+    </div>
+  </section>
+
+  <!-- ============ IMAGE COMPARE ============ -->
+  <section class="view" id="view-image">
+    <div class="toolbar">
+      <div class="group">
+        <select id="imgMode">
+          <option value="side">Side by side</option>
+          <option value="fade">Fade slider</option>
+          <option value="diff">Difference highlight</option>
+        </select>
+        <span id="fadeCtrl" class="hidden">
+          <input type="range" id="fadeSlider" min="0" max="100" value="50">
+        </span>
+        <span id="diffCtrl" class="hidden">
+          <label class="chk">Sensitivity <input type="range" id="diffThreshold" min="0" max="255" value="32" style="width:100px"></label>
+        </span>
+      </div>
+      <div class="group">
+        <button id="imgClearBtn">Clear</button>
+      </div>
+    </div>
+    <div class="img-stage">
+      <div class="img-drop-row">
+        <div class="img-drop" id="imgDropLeft">
+          <div class="lbl">Original image</div>
+          <div class="hint small-note">Click or drop an image</div>
+          <img class="hidden" id="imgPreviewLeft">
+        </div>
+        <div class="img-drop" id="imgDropRight">
+          <div class="lbl">Changed image</div>
+          <div class="hint small-note">Click or drop an image</div>
+          <img class="hidden" id="imgPreviewRight">
+        </div>
+      </div>
+      <input type="file" id="imgFileLeft" accept="image/*" class="hidden">
+      <input type="file" id="imgFileRight" accept="image/*" class="hidden">
+      <div class="img-result" id="imgResult">
+        <div class="empty-state">Load two images above to compare them.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FOLDER COMPARE ============ -->
+  <section class="view" id="view-folder">
+    <div class="toolbar">
+      <div class="group small-note">Compares files by relative path &amp; text content. Binary files are flagged by size only.</div>
+    </div>
+    <div class="folder-stage">
+      <div class="folder-pick-row">
+        <div class="folder-pick">
+          <div class="lbl">Original folder</div>
+          <label class="file-btn">Choose folder<input type="file" id="folderLeft" webkitdirectory directory multiple class="hidden"></label>
+          <span class="small-note" id="folderLeftInfo">No folder selected</span>
+        </div>
+        <div class="folder-pick">
+          <div class="lbl">Changed folder</div>
+          <label class="file-btn">Choose folder<input type="file" id="folderRight" webkitdirectory directory multiple class="hidden"></label>
+          <span class="small-note" id="folderRightInfo">No folder selected</span>
+        </div>
+      </div>
+      <div class="folder-list-wrap" id="folderListWrap">
+        <div class="empty-state">Choose both folders to see the comparison.</div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <strong id="modalTitle"></strong>
+      <button id="modalClose">✕ Close</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ===================== Myers diff core ===================== */
+function diffArrays(a, b, eq) {
+  eq = eq || ((x, y) => x === y);
+  const n = a.length, m = b.length;
+  if (n === 0 && m === 0) return [];
+  const max = n + m;
+  const offset = max;
+  const size = 2 * max + 1;
+  let v = new Int32Array(size);
+  const trace = [];
+  let found = false;
+  outer:
+  for (let d = 0; d <= max; d++) {
+    trace.push(v.slice());
+    for (let k = -d; k <= d; k += 2) {
+      let x;
+      if (k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1])) {
+        x = v[offset + k + 1];
+      } else {
+        x = v[offset + k - 1] + 1;
+      }
+      let y = x - k;
+      while (x < n && y < m && eq(a[x], b[y])) { x++; y++; }
+      v[offset + k] = x;
+      if (x >= n && y >= m) { found = true; break outer; }
+    }
+  }
+  let x = n, y = m;
+  const ops = [];
+  for (let d = trace.length - 1; d >= 0; d--) {
+    const vv = trace[d];
+    const k = x - y;
+    let prevK;
+    if (k === -d || (k !== d && vv[offset + k - 1] < vv[offset + k + 1])) {
+      prevK = k + 1;
+    } else {
+      prevK = k - 1;
+    }
+    const prevX = vv[offset + prevK];
+    const prevY = prevX - prevK;
+    while (x > prevX && y > prevY) {
+      ops.push({ type: 'equal', aIndex: x - 1, bIndex: y - 1 });
+      x--; y--;
+    }
+    if (d > 0) {
+      if (x === prevX) ops.push({ type: 'insert', aIndex: -1, bIndex: y - 1 });
+      else ops.push({ type: 'delete', aIndex: x - 1, bIndex: -1 });
+    }
+    x = prevX; y = prevY;
+  }
+  ops.reverse();
+  return ops;
+}
+
+/* ===================== helpers ===================== */
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+const COPY_ICON_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="5" y="5" width="9" height="9" rx="1.5"></rect><path d="M3.5 10.5h-1a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v1"></path></svg>';
+const CHECK_ICON_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8.5l3 3 7-7"></path></svg>';
+function copyBtnHtml(text) {
+  return `<button type="button" class="copy-row-btn" data-copy-text="${escapeHtml(text)}" title="Copy line" aria-label="Copy line">${COPY_ICON_SVG}</button>`;
+}
+function splitLines(text) {
+  if (text === '') return [];
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+}
+function tokenizeWords(str) {
+  return str.match(/\w+|[^\w\s]|\s+/g) || [];
+}
+function tokenizeChars(str) {
+  return Array.from(str);
+}
+function lineKey(line, opts) {
+  let s = line;
+  if (opts.ignoreCase) s = s.toLowerCase();
+  if (opts.ignoreAllWs) s = s.replace(/\s+/g, '');
+  else if (opts.ignoreWs) s = s.trim().replace(/\s+/g, ' ');
+  return s;
+}
+
+function computeLineDiff(leftRaw, rightRaw, opts) {
+  const leftLines = splitLines(leftRaw);
+  const rightLines = splitLines(rightRaw);
+
+  let leftIdx = leftLines.map((_, i) => i);
+  let rightIdx = rightLines.map((_, i) => i);
+  if (opts.ignoreBlank) {
+    leftIdx = leftIdx.filter(i => leftLines[i].trim() !== '');
+    rightIdx = rightIdx.filter(i => rightLines[i].trim() !== '');
+  }
+  const leftFiltered = leftIdx.map(i => lineKey(leftLines[i], opts));
+  const rightFiltered = rightIdx.map(i => lineKey(rightLines[i], opts));
+
+  const rawOps = diffArrays(leftFiltered, rightFiltered);
+  const ops = rawOps.map(op => ({
+    type: op.type,
+    aIndex: op.aIndex >= 0 ? leftIdx[op.aIndex] : -1,
+    bIndex: op.bIndex >= 0 ? rightIdx[op.bIndex] : -1,
+  }));
+  return { ops, leftLines, rightLines };
+}
+
+function buildRows(ops, leftLines, rightLines) {
+  const rows = [];
+  let i = 0;
+  while (i < ops.length) {
+    const op = ops[i];
+    if (op.type === 'equal') {
+      rows.push({ type: 'equal', leftNum: op.aIndex + 1, rightNum: op.bIndex + 1, leftText: leftLines[op.aIndex], rightText: rightLines[op.bIndex] });
+      i++;
+      continue;
+    }
+    const dels = [], inss = [];
+    while (i < ops.length && ops[i].type !== 'equal') {
+      if (ops[i].type === 'delete') dels.push(ops[i]); else inss.push(ops[i]);
+      i++;
+    }
+    const pairCount = Math.min(dels.length, inss.length);
+    for (let p = 0; p < pairCount; p++) {
+      rows.push({ type: 'mod', leftNum: dels[p].aIndex + 1, rightNum: inss[p].bIndex + 1, leftText: leftLines[dels[p].aIndex], rightText: rightLines[inss[p].bIndex] });
+    }
+    for (let p = pairCount; p < dels.length; p++) {
+      rows.push({ type: 'del', leftNum: dels[p].aIndex + 1, rightNum: null, leftText: leftLines[dels[p].aIndex], rightText: '' });
+    }
+    for (let p = pairCount; p < inss.length; p++) {
+      rows.push({ type: 'add', leftNum: null, rightNum: inss[p].bIndex + 1, leftText: '', rightText: rightLines[inss[p].bIndex] });
+    }
+  }
+  return rows;
+}
+
+const MAX_INTRALINE_LEN = 4000;
+function intralineHtml(leftText, rightText, granularity, ignoreCase) {
+  if (granularity === 'line' || leftText.length > MAX_INTRALINE_LEN || rightText.length > MAX_INTRALINE_LEN) {
+    return { leftHtml: escapeHtml(leftText), rightHtml: escapeHtml(rightText) };
+  }
+  const tokenize = granularity === 'char' ? tokenizeChars : tokenizeWords;
+  const a = tokenize(leftText), b = tokenize(rightText);
+  const eq = ignoreCase ? (x, y) => x.toLowerCase() === y.toLowerCase() : undefined;
+  const ops = diffArrays(a, b, eq);
+  let leftHtml = '', rightHtml = '';
+  for (const op of ops) {
+    if (op.type === 'equal') {
+      const t = escapeHtml(a[op.aIndex]);
+      leftHtml += t; rightHtml += t;
+    } else if (op.type === 'delete') {
+      leftHtml += `<del class="tok">${escapeHtml(a[op.aIndex])}</del>`;
+    } else {
+      rightHtml += `<ins class="tok">${escapeHtml(b[op.bIndex])}</ins>`;
+    }
+  }
+  return { leftHtml, rightHtml };
+}
+
+function computeStats(rows) {
+  let added = 0, removed = 0, unchanged = 0;
+  for (const r of rows) {
+    if (r.type === 'equal') unchanged++;
+    else if (r.type === 'add') added++;
+    else if (r.type === 'del') removed++;
+    else if (r.type === 'mod') { added++; removed++; }
+  }
+  return { added, removed, unchanged };
+}
+
+/* ===================== rendering: side by side & unified ===================== */
+// `reviewed` (a Set of row keys) is optional; when given, changed rows get a "mark reviewed" button.
+const CHECK_SVG_SM = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8.5l3 3 7-7"></path></svg>';
+function reviewBtnHtml(r, reviewed) {
+  if (!reviewed) return '';
+  return `<button type="button" class="review-btn" title="Mark this change as reviewed" aria-label="Mark as reviewed">${CHECK_SVG_SM}</button>`;
+}
+function trOpen(cls, r, reviewed) {
+  if (!reviewed) return `<tr class="${cls}">`;
+  return `<tr class="${cls}${reviewed.has(r.key) ? ' reviewed' : ''}" data-rid="${r.rid}">`;
+}
+function changedCell(html, text, r, reviewed) {
+  return `<td class="content${reviewed ? ' has-review' : ''}">${html || '&nbsp;'}${copyBtnHtml(text)}${reviewBtnHtml(r, reviewed)}</td>`;
+}
+
+function renderSideBySide(rows, granularity, ignoreCase, reviewed) {
+  let leftRows = '', rightRows = '';
+  const empty = `<tr class="row-empty"><td class="gutter"></td><td class="marker"></td><td class="content"></td></tr>`;
+  for (const r of rows) {
+    if (r.type === 'equal') {
+      leftRows += `<tr><td class="gutter">${r.leftNum}</td><td class="marker"></td><td class="content">${escapeHtml(r.leftText) || '&nbsp;'}</td></tr>`;
+      rightRows += `<tr><td class="gutter">${r.rightNum}</td><td class="marker"></td><td class="content">${escapeHtml(r.rightText) || '&nbsp;'}</td></tr>`;
+    } else if (r.type === 'mod') {
+      const { leftHtml, rightHtml } = intralineHtml(r.leftText, r.rightText, granularity, ignoreCase);
+      leftRows += `${trOpen('row-del', r, reviewed)}<td class="gutter">${r.leftNum}</td><td class="marker">−</td>${changedCell(leftHtml, r.leftText, r, reviewed)}</tr>`;
+      rightRows += `${trOpen('row-add', r, reviewed)}<td class="gutter">${r.rightNum}</td><td class="marker">+</td>${changedCell(rightHtml, r.rightText, r, reviewed)}</tr>`;
+    } else if (r.type === 'del') {
+      leftRows += `${trOpen('row-del', r, reviewed)}<td class="gutter">${r.leftNum}</td><td class="marker">−</td>${changedCell(escapeHtml(r.leftText), r.leftText, r, reviewed)}</tr>`;
+      rightRows += reviewed ? `<tr class="row-empty${reviewed.has(r.key) ? ' reviewed' : ''}" data-rid="${r.rid}"><td class="gutter"></td><td class="marker"></td><td class="content"></td></tr>` : empty;
+    } else if (r.type === 'add') {
+      leftRows += reviewed ? `<tr class="row-empty${reviewed.has(r.key) ? ' reviewed' : ''}" data-rid="${r.rid}"><td class="gutter"></td><td class="marker"></td><td class="content"></td></tr>` : empty;
+      rightRows += `${trOpen('row-add', r, reviewed)}<td class="gutter">${r.rightNum}</td><td class="marker">+</td>${changedCell(escapeHtml(r.rightText), r.rightText, r, reviewed)}</tr>`;
+    }
+  }
+  const leftHtml = `<table class="diff-table"><colgroup><col style="width:46px"><col style="width:18px"><col></colgroup><tbody>${leftRows}</tbody></table>`;
+  const rightHtml = `<table class="diff-table"><colgroup><col style="width:46px"><col style="width:18px"><col></colgroup><tbody>${rightRows}</tbody></table>`;
+  return { leftHtml, rightHtml };
+}
+
+function renderUnified(rows, granularity, ignoreCase, reviewed) {
+  let body = '';
+  for (const r of rows) {
+    if (r.type === 'equal') {
+      body += `<tr><td class="gutter">${r.leftNum}</td><td class="gutter">${r.rightNum}</td><td class="marker"></td><td class="content">${escapeHtml(r.leftText) || '&nbsp;'}</td></tr>`;
+    } else if (r.type === 'mod') {
+      // Both lines of a modified pair share one review state (and one button, on the green line).
+      const { leftHtml, rightHtml } = intralineHtml(r.leftText, r.rightText, granularity, ignoreCase);
+      body += `${trOpen('row-del', r, reviewed)}<td class="gutter">${r.leftNum}</td><td class="gutter"></td><td class="marker">−</td><td class="content">${leftHtml || '&nbsp;'}${copyBtnHtml(r.leftText)}</td></tr>`;
+      body += `${trOpen('row-add', r, reviewed)}<td class="gutter"></td><td class="gutter">${r.rightNum}</td><td class="marker">+</td>${changedCell(rightHtml, r.rightText, r, reviewed)}</tr>`;
+    } else if (r.type === 'del') {
+      body += `${trOpen('row-del', r, reviewed)}<td class="gutter">${r.leftNum}</td><td class="gutter"></td><td class="marker">−</td>${changedCell(escapeHtml(r.leftText), r.leftText, r, reviewed)}</tr>`;
+    } else if (r.type === 'add') {
+      body += `${trOpen('row-add', r, reviewed)}<td class="gutter"></td><td class="gutter">${r.rightNum}</td><td class="marker">+</td>${changedCell(escapeHtml(r.rightText), r.rightText, r, reviewed)}</tr>`;
+    }
+  }
+  return `<table class="diff-table"><colgroup><col style="width:46px"><col style="width:46px"><col style="width:18px"><col></colgroup><tbody>${body}</tbody></table>`;
+}
+
+/* ===================== generic diff panel controller ===================== */
+function makeDiffController(prefix, opts) {
+  const els = {
+    compareBtn: document.getElementById(prefix + 'CompareBtn'),
+    backBtn: document.getElementById(prefix + 'BackBtn'),
+    swapBtn: document.getElementById(prefix + 'SwapBtn'),
+    clearBtn: document.getElementById(prefix + 'ClearBtn'),
+    inputStage: document.getElementById(opts.inputStageId),
+    resultStage: document.getElementById(opts.resultStageId),
+    left: document.getElementById(opts.leftId),
+    right: document.getElementById(opts.rightId),
+    stats: document.getElementById(opts.statsId),
+    sideWrap: document.getElementById(opts.sideWrapId),
+    paneLeft: document.getElementById(opts.paneLeftId),
+    paneRight: document.getElementById(opts.paneRightId),
+    unifiedWrap: document.getElementById(opts.unifiedWrapId),
+    viewMode: document.getElementById(opts.viewModeId),
+  };
+
+  function getOptions() { return opts.getOptions ? opts.getOptions() : {}; }
+  function getGranularity() { return opts.getGranularity ? opts.getGranularity() : 'word'; }
+  function getLeftRight() {
+    return opts.transform ? opts.transform(els.left.value, els.right.value) : { left: els.left.value, right: els.right.value };
+  }
+
+  let lastRows = null;
+  let lastMeta = { granularity: 'word', ignoreCase: false };
+  const reviewed = new Set();
+  let hideReviewed = false;
+  const resultActionEls = () => [].concat(opts.resultActionsIds || []).map(id => document.getElementById(id)).filter(Boolean);
+
+  // Give every changed row a stable key (content + occurrence) so review marks survive re-renders.
+  function assignKeys(rows) {
+    const seen = new Map();
+    rows.forEach((r, i) => {
+      r.rid = i;
+      if (r.type === 'equal') return;
+      const base = r.type + ' ' + r.leftText + ' ' + r.rightText;
+      const n = (seen.get(base) || 0) + 1;
+      seen.set(base, n);
+      r.key = base + '#' + n;
+    });
+  }
+  function changedRows() { return (lastRows || []).filter(r => r.key); }
+  function refreshReviewUi() {
+    const rows = changedRows();
+    const done = rows.filter(r => reviewed.has(r.key)).length;
+    const prog = els.stats.querySelector('.review-progress');
+    if (prog) prog.innerHTML = `<b>${done}</b> / ${rows.length} changes reviewed`;
+    const allBtn = els.stats.querySelector('.review-all');
+    if (allBtn) allBtn.textContent = (rows.length && done === rows.length) ? 'Clear reviewed' : 'Mark all reviewed';
+    els.resultStage.querySelectorAll('tr[data-rid]').forEach(tr => {
+      const r = lastRows[+tr.dataset.rid];
+      const on = !!r && reviewed.has(r.key);
+      tr.classList.toggle('reviewed', on);
+      const b = tr.querySelector('.review-btn');
+      if (b) { b.setAttribute('aria-pressed', on); b.title = on ? 'Reviewed (click to undo)' : 'Mark this change as reviewed'; }
+    });
+  }
+  const errorEl = opts.errorId && document.getElementById(opts.errorId);
+
+  function render() {
+    const { left, right, error } = getLeftRight();
+    if (errorEl) {
+      errorEl.textContent = error || '';
+      errorEl.classList.toggle('hidden', !error);
+    }
+    if (error) {
+      if (!errorEl) alert(error);
+      return;
+    }
+    const lineOpts = getOptions();
+    const { ops, leftLines, rightLines } = computeLineDiff(left, right, lineOpts);
+    const rows = buildRows(ops, leftLines, rightLines);
+    assignKeys(rows);
+    lastRows = rows;
+    const stats = computeStats(rows);
+    els.stats.innerHTML = `<span><b>${leftLines.length}</b> / <b>${rightLines.length}</b> lines</span>` +
+      `<span class="stat-add">+${stats.added} added</span>` +
+      `<span class="stat-del">−${stats.removed} removed</span>` +
+      `<span>${stats.unchanged} unchanged</span>` +
+      `<span class="stats-spacer"></span>` +
+      (stats.added + stats.removed ? `<span class="review-progress"></span>` +
+        `<button type="button" class="review-all"></button>` +
+        `<label class="chk"><input type="checkbox" class="hide-reviewed-chk"${hideReviewed ? ' checked' : ''}> Hide reviewed</label>` : '');
+
+    const granularity = getGranularity();
+    lastMeta = { granularity, ignoreCase: !!lineOpts.ignoreCase };
+    const mode = els.viewMode ? els.viewMode.value : 'side';
+    if (mode === 'side') {
+      const { leftHtml, rightHtml } = renderSideBySide(rows, granularity, lineOpts.ignoreCase, reviewed);
+      els.paneLeft.innerHTML = leftHtml;
+      els.paneRight.innerHTML = rightHtml;
+      els.sideWrap.classList.remove('hidden');
+      els.unifiedWrap.classList.add('hidden');
+    } else {
+      els.unifiedWrap.innerHTML = renderUnified(rows, granularity, lineOpts.ignoreCase, reviewed);
+      els.sideWrap.classList.add('hidden');
+      els.unifiedWrap.classList.remove('hidden');
+    }
+
+    els.inputStage.style.display = 'none';
+    els.resultStage.classList.add('active');
+    if (els.backBtn) els.backBtn.classList.remove('hidden');
+    if (els.compareBtn) els.compareBtn.classList.add('hidden');
+    resultActionEls().forEach(el => el.classList.remove('hidden'));
+    els.resultStage.classList.toggle('hide-reviewed', hideReviewed);
+    refreshReviewUi();
+  }
+
+  function showInput() {
+    els.inputStage.style.display = '';
+    els.resultStage.classList.remove('active');
+    if (els.backBtn) els.backBtn.classList.add('hidden');
+    if (els.compareBtn) els.compareBtn.classList.remove('hidden');
+    resultActionEls().forEach(el => el.classList.add('hidden'));
+    if (errorEl) errorEl.classList.add('hidden');
+  }
+
+  if (els.compareBtn) els.compareBtn.addEventListener('click', render);
+  if (els.backBtn) els.backBtn.addEventListener('click', showInput);
+  if (els.swapBtn) els.swapBtn.addEventListener('click', () => {
+    const tmp = els.left.value; els.left.value = els.right.value; els.right.value = tmp;
+  });
+  if (els.clearBtn) els.clearBtn.addEventListener('click', () => {
+    els.left.value = ''; els.right.value = ''; reviewed.clear(); showInput();
+  });
+  // Review interactions (event delegation, so re-renders need no re-wiring)
+  els.resultStage.addEventListener('click', e => {
+    const btn = e.target.closest('.review-btn');
+    if (btn) {
+      const tr = btn.closest('tr[data-rid]');
+      const r = tr && lastRows[+tr.dataset.rid];
+      if (!r) return;
+      if (reviewed.has(r.key)) reviewed.delete(r.key); else reviewed.add(r.key);
+      refreshReviewUi();
+      return;
+    }
+    if (e.target.closest('.review-all')) {
+      const rows = changedRows();
+      const allDone = rows.every(r => reviewed.has(r.key));
+      rows.forEach(r => allDone ? reviewed.delete(r.key) : reviewed.add(r.key));
+      refreshReviewUi();
+    }
+  });
+  els.resultStage.addEventListener('change', e => {
+    if (e.target.classList.contains('hide-reviewed-chk')) {
+      hideReviewed = e.target.checked;
+      els.resultStage.classList.toggle('hide-reviewed', hideReviewed);
+    }
+  });
+  if (els.viewMode) els.viewMode.addEventListener('change', () => { if (els.resultStage.classList.contains('active')) render(); });
+
+  let syncing = false;
+  if (els.paneLeft && els.paneRight) {
+    els.paneLeft.addEventListener('scroll', () => { if (syncing) return; syncing = true; els.paneRight.scrollTop = els.paneLeft.scrollTop; syncing = false; });
+    els.paneRight.addEventListener('scroll', () => { if (syncing) return; syncing = true; els.paneLeft.scrollTop = els.paneRight.scrollTop; syncing = false; });
+  }
+
+  return { render, showInput, getRows: () => lastRows, getMeta: () => lastMeta, isReviewed: r => !!r.key && reviewed.has(r.key) };
+}
+
+/* ===================== TEXT COMPARE wiring ===================== */
+const textCtl = makeDiffController('txt', {
+  inputStageId: 'txtInputStage', resultStageId: 'txtResultStage',
+  leftId: 'leftText', rightId: 'rightText',
+  statsId: 'txtStats', sideWrapId: 'sideWrap', paneLeftId: 'paneLeft', paneRightId: 'paneRight',
+  unifiedWrapId: 'unifiedWrap', viewModeId: 'viewMode', resultActionsIds: ['resultActions', 'shareActions'],
+  getOptions: () => ({
+    ignoreCase: document.getElementById('optIgnoreCase').checked,
+    ignoreWs: document.getElementById('optIgnoreWs').checked,
+    ignoreAllWs: document.getElementById('optIgnoreAllWs').checked,
+    ignoreBlank: document.getElementById('optIgnoreBlank').checked,
+  }),
+  getGranularity: () => document.getElementById('granularity').value,
+});
+
+function updateLineCounts() {
+  document.getElementById('leftLineCount').textContent = document.getElementById('leftText').value ? splitLines(document.getElementById('leftText').value).length + ' lines' : '';
+  document.getElementById('rightLineCount').textContent = document.getElementById('rightText').value ? splitLines(document.getElementById('rightText').value).length + ' lines' : '';
+}
+document.getElementById('leftText').addEventListener('input', updateLineCounts);
+document.getElementById('rightText').addEventListener('input', updateLineCounts);
+
+function wireFileInput(inputId, textareaId) {
+  document.getElementById(inputId).addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { document.getElementById(textareaId).value = reader.result; updateLineCounts(); };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+}
+wireFileInput('txtFileLeft', 'leftText');
+wireFileInput('txtFileRight', 'rightText');
+
+function wireDropZone(colId, textareaId) {
+  const col = document.getElementById(colId);
+  ['dragenter', 'dragover'].forEach(ev => col.addEventListener(ev, e => { e.preventDefault(); col.classList.add('dragging'); }));
+  ['dragleave', 'drop'].forEach(ev => col.addEventListener(ev, e => { e.preventDefault(); col.classList.remove('dragging'); }));
+  col.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { document.getElementById(textareaId).value = reader.result; updateLineCounts(); };
+    reader.readAsText(file);
+  });
+}
+wireDropZone('colLeft', 'leftText');
+wireDropZone('colRight', 'rightText');
+
+document.getElementById('txtCopyBtn').addEventListener('click', async () => {
+  const rows = textCtl.getRows();
+  if (!rows) return;
+  let out = '';
+  for (const r of rows) {
+    if (r.type === 'equal') out += '  ' + r.leftText + '\n';
+    else if (r.type === 'mod') { out += '- ' + r.leftText + '\n+ ' + r.rightText + '\n'; }
+    else if (r.type === 'del') out += '- ' + r.leftText + '\n';
+    else if (r.type === 'add') out += '+ ' + r.rightText + '\n';
+  }
+  try { await navigator.clipboard.writeText(out); flashBtn('txtCopyBtn', 'Copied!'); } catch (e) { alert('Copy failed: ' + e.message); }
+});
+document.getElementById('txtDownloadBtn').addEventListener('click', () => {
+  downloadDiffHtml(document.getElementById('sideWrap').classList.contains('hidden') ? document.getElementById('unifiedWrap').innerHTML : (document.getElementById('paneLeft').innerHTML + document.getElementById('paneRight').innerHTML), 'diff.html');
+});
+
+document.addEventListener('click', async e => {
+  const btn = e.target.closest('.copy-row-btn');
+  if (!btn) return;
+  e.stopPropagation();
+  const text = btn.getAttribute('data-copy-text') || '';
+  try {
+    await navigator.clipboard.writeText(text);
+    const prevHtml = btn.innerHTML;
+    btn.innerHTML = CHECK_ICON_SVG;
+    btn.classList.add('copied');
+    setTimeout(() => { btn.innerHTML = prevHtml; btn.classList.remove('copied'); }, 900);
+  } catch (err) {
+    alert('Copy failed: ' + err.message);
+  }
+});
+
+/* ===================== SHARE AS IMAGE (100% local, canvas-based) ===================== */
+function intralineSegments(leftText, rightText, granularity, ignoreCase) {
+  if (granularity === 'line' || leftText.length > MAX_INTRALINE_LEN || rightText.length > MAX_INTRALINE_LEN) {
+    return { l: [{ t: leftText }], r: [{ t: rightText }] };
+  }
+  const tokenize = granularity === 'char' ? tokenizeChars : tokenizeWords;
+  const a = tokenize(leftText), b = tokenize(rightText);
+  const eq = ignoreCase ? (x, y) => x.toLowerCase() === y.toLowerCase() : undefined;
+  const l = [], r = [];
+  for (const op of diffArrays(a, b, eq)) {
+    if (op.type === 'equal') { l.push({ t: a[op.aIndex] }); r.push({ t: a[op.aIndex] }); }
+    else if (op.type === 'delete') l.push({ t: a[op.aIndex], c: true });
+    else r.push({ t: b[op.bIndex], c: true });
+  }
+  return { l, r };
+}
+// Break segments into visual lines of at most `cols` monospace cells.
+function wrapSegments(segs, cols) {
+  const lines = [[]];
+  let col = 0;
+  for (const seg of segs) {
+    let buf = '';
+    for (const ch of Array.from(seg.t.replace(/\t/g, '    '))) {
+      if (col >= cols) {
+        if (buf) lines[lines.length - 1].push({ t: buf, c: seg.c });
+        buf = ''; lines.push([]); col = 0;
+      }
+      buf += ch; col++;
+    }
+    if (buf) lines[lines.length - 1].push({ t: buf, c: seg.c });
+  }
+  return lines;
+}
+
+function buildShareCanvas(ctl, changedOnly) {
+  const rows = ctl.getRows();
+  if (!rows) return null;
+  const { granularity, ignoreCase } = ctl.getMeta();
+  const cs = getComputedStyle(document.documentElement);
+  const C = n => cs.getPropertyValue(n).trim();
+  const font = '12.5px Consolas, "SFMono-Regular", "Liberation Mono", Menlo, monospace';
+  const uiFont = '600 12px "Segoe UI", -apple-system, Roboto, Helvetica, Arial, sans-serif';
+  const LH = 19, GUT = 46, MARK = 18, COL = 720, HEAD = 40, PAD = 8;
+  const meas = document.createElement('canvas').getContext('2d');
+  meas.font = font;
+  const cw = meas.measureText('M').width;
+  const cols = Math.max(10, Math.floor((COL - GUT - MARK - PAD * 2) / cw));
+
+  // Pick rows (optionally just the changes +/-2 lines of context, to share as little as possible)
+  let items = rows;
+  if (changedOnly) {
+    const keep = new Array(rows.length).fill(false);
+    rows.forEach((r, i) => { if (r.type !== 'equal') for (let j = Math.max(0, i - 2); j <= Math.min(rows.length - 1, i + 2); j++) keep[j] = true; });
+    items = []; let skipped = 0;
+    rows.forEach((r, i) => {
+      if (keep[i]) { if (skipped) { items.push({ sep: skipped }); skipped = 0; } items.push(r); } else skipped++;
+    });
+    if (skipped) items.push({ sep: skipped });
+  }
+
+  // Layout
+  const laid = items.map(r => {
+    if (r.sep) return { r, h: LH + 4 };
+    let ls, rs;
+    if (r.type === 'mod') { const x = intralineSegments(r.leftText, r.rightText, granularity, ignoreCase); ls = x.l; rs = x.r; }
+    else { ls = [{ t: r.leftText }]; rs = [{ t: r.rightText }]; }
+    const lw = wrapSegments(ls, cols), rw = wrapSegments(rs, cols);
+    return { r, lw, rw, h: Math.max(lw.length, rw.length) * LH };
+  });
+  const bodyH = laid.reduce((n, x) => n + x.h, 0);
+  const W = COL * 2, H = HEAD + bodyH + 4;
+  let scale = 2;
+  if (H * scale > 30000) scale = 1;
+  if (H * scale > 30000) { alert('The diff is too tall to render as one image. Keep "Changed lines only" checked or compare a smaller range.'); return null; }
+
+  const cv = document.createElement('canvas');
+  cv.width = W * scale; cv.height = H * scale;
+  const g = cv.getContext('2d');
+  g.scale(scale, scale);
+  g.textBaseline = 'middle';
+  g.fillStyle = C('--panel'); g.fillRect(0, 0, W, H);
+
+  // Header
+  const st = computeStats(rows);
+  const changed = rows.filter(r => r.key);
+  const done = changed.filter(r => ctl.isReviewed(r)).length;
+  g.fillStyle = C('--header-bg'); g.fillRect(0, 0, W, HEAD);
+  g.font = uiFont; g.textAlign = 'left';
+  g.fillStyle = C('--text-dim'); g.fillText('ORIGINAL', 12, HEAD / 2);
+  g.fillText('CHANGED', COL + 12, HEAD / 2);
+  g.textAlign = 'right';
+  g.fillStyle = C('--add-text'); g.fillText('+' + st.added, W - 12 - 150, HEAD / 2);
+  g.fillStyle = C('--del-text'); g.fillText('−' + st.removed, W - 12 - 110, HEAD / 2);
+  g.fillStyle = C('--text-dim'); g.fillText(done + '/' + changed.length + ' reviewed', W - 12, HEAD / 2);
+  g.fillStyle = C('--border'); g.fillRect(0, HEAD - 1, W, 1);
+
+  // Body
+  let y = HEAD;
+  for (const it of laid) {
+    const { r, h } = it;
+    g.font = font;
+    if (r.sep) {
+      g.fillStyle = C('--gutter-bg'); g.fillRect(0, y, W, h);
+      g.fillStyle = C('--text-dim'); g.textAlign = 'center';
+      g.fillText('⋯ ' + r.sep + ' unchanged line' + (r.sep > 1 ? 's' : '') + ' ⋯', W / 2, y + h / 2);
+      y += h; continue;
+    }
+    const isDone = ctl.isReviewed(r);
+    for (let side = 0; side < 2; side++) {
+      const x0 = side * COL;
+      const lines = side ? it.rw : it.lw;
+      const num = side ? r.rightNum : r.leftNum;
+      const has = side ? r.type !== 'del' : r.type !== 'add';
+      let bg = null, strong = null, mark = '';
+      if (has && r.type !== 'equal') {
+        if (side === 0) { bg = C('--del-bg'); strong = C('--del-strong'); mark = '−'; }
+        else { bg = C('--add-bg'); strong = C('--add-strong'); mark = '+'; }
+      }
+      g.fillStyle = bg || (has ? C('--panel') : C('--gutter-bg'));
+      g.fillRect(x0, y, COL, h);
+      g.fillStyle = C('--gutter-bg'); g.fillRect(x0, y, GUT + (bg ? MARK : 0), h);
+      g.fillStyle = C('--border'); g.fillRect(x0 + GUT - 1, y, 1, h);
+      if (has && num != null) { g.fillStyle = C('--gutter-text'); g.textAlign = 'right'; g.fillText(String(num), x0 + GUT - 8, y + LH / 2); }
+      if (mark) { g.fillStyle = side ? C('--add-text') : C('--del-text'); g.textAlign = 'center'; g.fillText(mark, x0 + GUT + MARK / 2, y + LH / 2); }
+      if (isDone && side === 0 && r.type !== 'equal') { g.fillStyle = C('--add-text'); g.textAlign = 'left'; g.fillText('✓', x0 + 4, y + LH / 2); }
+      if (has) {
+        g.globalAlpha = isDone ? 0.55 : 1;
+        lines.forEach((segs, li) => {
+          let cx = x0 + GUT + MARK + PAD;
+          const cy = y + li * LH;
+          for (const sg of segs) {
+            const txt = sg.t.replace(/\t/g, '    ');
+            const w = Array.from(txt).length * cw;
+            if (sg.c && strong) { g.fillStyle = strong; g.fillRect(cx, cy + 1, w, LH - 2); }
+            g.fillStyle = C('--text'); g.textAlign = 'left';
+            g.fillText(txt, cx, cy + LH / 2);
+            cx += w;
+          }
+        });
+        g.globalAlpha = 1;
+      }
+    }
+    y += h;
+  }
+  g.fillStyle = C('--border'); g.fillRect(COL, HEAD, 1, H - HEAD);
+  g.fillRect(0, H - 1, W, 1);
+  return cv;
+}
+
+function canvasToBlob(cv) { return new Promise(res => cv.toBlob(res, 'image/png')); }
+function shareCanvas() { return buildShareCanvas(textCtl, document.getElementById('shareChangedOnly').checked); }
+
+document.getElementById('shareCopyImgBtn').addEventListener('click', async () => {
+  const cv = shareCanvas(); if (!cv) return;
+  try {
+    const blob = await canvasToBlob(cv);
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    flashBtn('shareCopyImgBtn', 'Copied!');
+  } catch (e) { alert('Could not copy the image (' + e.message + '). Use "Save PNG" instead.'); }
+});
+document.getElementById('shareSaveImgBtn').addEventListener('click', async () => {
+  const cv = shareCanvas(); if (!cv) return;
+  const blob = await canvasToBlob(cv);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'diff-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.png';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+document.getElementById('shareBase64Btn').addEventListener('click', async () => {
+  const cv = shareCanvas(); if (!cv) return;
+  try { await navigator.clipboard.writeText(cv.toDataURL('image/png')); flashBtn('shareBase64Btn', 'Copied!'); }
+  catch (e) { alert('Copy failed: ' + e.message); }
+});
+
+function flashBtn(id, msg) {
+  const btn = document.getElementById(id);
+  const orig = btn.textContent;
+  btn.textContent = msg;
+  setTimeout(() => { btn.textContent = orig; }, 1200);
+}
+function downloadDiffHtml(bodyHtml, filename) {
+  const styleTag = document.querySelector('style').outerHTML;
+  const doc = `<!doctype html><html><head><meta charset="utf-8">${styleTag}</head><body style="padding:16px"><div style="display:flex">${bodyHtml}</div></body></html>`;
+  const blob = new Blob([doc], { type: 'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ===================== JSON COMPARE wiring ===================== */
+function tryFormatJson(str, sortKeys) {
+  if (str.trim() === '') return '';
+  const obj = JSON.parse(str);
+  const replacer = sortKeys ? (key, value) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return Object.keys(value).sort().reduce((acc, k) => { acc[k] = value[k]; return acc; }, {});
+    }
+    return value;
+  } : undefined;
+  return JSON.stringify(obj, replacer, 2);
+}
+
+const jsonCtl = makeDiffController('json', {
+  inputStageId: 'jsonInputStage', resultStageId: 'jsonResultStage',
+  leftId: 'jsonLeft', rightId: 'jsonRight',
+  statsId: 'jsonStats', sideWrapId: 'jsonSideWrap', paneLeftId: 'jsonPaneLeft', paneRightId: 'jsonPaneRight',
+  unifiedWrapId: 'jsonUnifiedWrap', viewModeId: 'jsonViewMode', errorId: 'jsonError',
+  getGranularity: () => 'word',
+  transform: (leftRaw, rightRaw) => {
+    const sortKeys = document.getElementById('jsonSortKeys').checked;
+    try {
+      const left = tryFormatJson(leftRaw, sortKeys);
+      const right = tryFormatJson(rightRaw, sortKeys);
+      return { left, right };
+    } catch (e) {
+      return { left: '', right: '', error: 'Invalid JSON: ' + e.message };
+    }
+  },
+});
+
+/* ===================== TABS ===================== */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+/* ===================== IMAGE COMPARE ===================== */
+const imgState = { leftImg: null, rightImg: null };
+function loadImageFile(file, side) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      imgState[side] = img;
+      const previewEl = document.getElementById(side === 'leftImg' ? 'imgPreviewLeft' : 'imgPreviewRight');
+      previewEl.src = img.src;
+      previewEl.classList.remove('hidden');
+      renderImageCompare();
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+function wireImgDrop(dropId, fileInputId, side) {
+  const drop = document.getElementById(dropId);
+  const input = document.getElementById(fileInputId);
+  drop.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => { if (input.files[0]) loadImageFile(input.files[0], side); input.value = ''; });
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.style.background = 'var(--row-hover)'; }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.style.background = ''; }));
+  drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) loadImageFile(f, side); });
+}
+wireImgDrop('imgDropLeft', 'imgFileLeft', 'leftImg');
+wireImgDrop('imgDropRight', 'imgFileRight', 'rightImg');
+
+document.getElementById('imgClearBtn').addEventListener('click', () => {
+  imgState.leftImg = null; imgState.rightImg = null;
+  document.getElementById('imgPreviewLeft').classList.add('hidden');
+  document.getElementById('imgPreviewRight').classList.add('hidden');
+  document.getElementById('imgResult').innerHTML = '<div class="empty-state">Load two images above to compare them.</div>';
+});
+document.getElementById('imgMode').addEventListener('change', () => {
+  const mode = document.getElementById('imgMode').value;
+  document.getElementById('fadeCtrl').classList.toggle('hidden', mode !== 'fade');
+  document.getElementById('diffCtrl').classList.toggle('hidden', mode !== 'diff');
+  renderImageCompare();
+});
+document.getElementById('fadeSlider').addEventListener('input', renderImageCompare);
+document.getElementById('diffThreshold').addEventListener('input', renderImageCompare);
+
+function renderImageCompare() {
+  const { leftImg, rightImg } = imgState;
+  const result = document.getElementById('imgResult');
+  if (!leftImg || !rightImg) return;
+  const mode = document.getElementById('imgMode').value;
+
+  if (mode === 'side') {
+    result.innerHTML = `<div class="img-side-by-side">
+      <figure><img src="${leftImg.src}" style="max-width:420px;max-height:70vh;border:1px solid var(--border);border-radius:4px"><figcaption>Original (${leftImg.naturalWidth}×${leftImg.naturalHeight})</figcaption></figure>
+      <figure><img src="${rightImg.src}" style="max-width:420px;max-height:70vh;border:1px solid var(--border);border-radius:4px"><figcaption>Changed (${rightImg.naturalWidth}×${rightImg.naturalHeight})</figcaption></figure>
+    </div>`;
+    return;
+  }
+
+  const w = Math.max(leftImg.naturalWidth, rightImg.naturalWidth);
+  const h = Math.max(leftImg.naturalHeight, rightImg.naturalHeight);
+
+  if (mode === 'fade') {
+    const opacity = document.getElementById('fadeSlider').value / 100;
+    result.innerHTML = `<div class="img-canvas-wrap"><canvas width="${w}" height="${h}" id="baseCanvas"></canvas><canvas width="${w}" height="${h}" id="topCanvas" class="overlay-top" style="opacity:${opacity}"></canvas></div>`;
+    const base = document.getElementById('baseCanvas').getContext('2d');
+    const top = document.getElementById('topCanvas').getContext('2d');
+    base.drawImage(leftImg, 0, 0);
+    top.drawImage(rightImg, 0, 0);
+    return;
+  }
+
+  if (mode === 'diff') {
+    const threshold = parseInt(document.getElementById('diffThreshold').value, 10);
+    const c1 = document.createElement('canvas'); c1.width = w; c1.height = h;
+    const c2 = document.createElement('canvas'); c2.width = w; c2.height = h;
+    const ctx1 = c1.getContext('2d'), ctx2 = c2.getContext('2d');
+    ctx1.drawImage(leftImg, 0, 0);
+    ctx2.drawImage(rightImg, 0, 0);
+    const d1 = ctx1.getImageData(0, 0, w, h), d2 = ctx2.getImageData(0, 0, w, h);
+    const out = ctx1.createImageData(w, h);
+    let diffPixels = 0;
+    for (let i = 0; i < d1.data.length; i += 4) {
+      const dr = Math.abs(d1.data[i] - d2.data[i]);
+      const dg = Math.abs(d1.data[i + 1] - d2.data[i + 1]);
+      const db = Math.abs(d1.data[i + 2] - d2.data[i + 2]);
+      const da = Math.abs(d1.data[i + 3] - d2.data[i + 3]);
+      const changed = (dr + dg + db + da) / 4 > threshold;
+      if (changed) {
+        diffPixels++;
+        out.data[i] = 255; out.data[i + 1] = 0; out.data[i + 2] = 200; out.data[i + 3] = 255;
+      } else {
+        const gray = (d1.data[i] + d1.data[i + 1] + d1.data[i + 2]) / 3 * 0.5 + 90;
+        out.data[i] = gray; out.data[i + 1] = gray; out.data[i + 2] = gray; out.data[i + 3] = d1.data[i + 3];
+      }
+    }
+    result.innerHTML = `<div><div class="img-canvas-wrap"><canvas width="${w}" height="${h}" id="diffCanvas"></canvas></div><div class="small-note" style="margin-top:8px;text-align:center">${diffPixels.toLocaleString()} of ${(w * h).toLocaleString()} pixels differ (${(diffPixels / (w * h) * 100).toFixed(2)}%)</div></div>`;
+    document.getElementById('diffCanvas').getContext('2d').putImageData(out, 0, 0);
+  }
+}
+
+/* ===================== FOLDER COMPARE ===================== */
+const folderState = { left: null, right: null };
+const TEXT_EXT = /\.(txt|md|js|jsx|ts|tsx|json|css|scss|html|htm|xml|yml|yaml|py|java|c|cpp|h|hpp|cs|go|rb|php|sh|bat|ps1|sql|ini|cfg|conf|log|csv|svg)$/i;
+
+function readDirInput(input) {
+  const map = new Map();
+  for (const file of input.files) {
+    const rel = file.webkitRelativePath || file.name;
+    const parts = rel.split('/');
+    parts.shift();
+    map.set(parts.join('/') || rel, file);
+  }
+  return map;
+}
+
+document.getElementById('folderLeft').addEventListener('change', e => {
+  folderState.left = readDirInput(e.target);
+  document.getElementById('folderLeftInfo').textContent = `${folderState.left.size} files loaded`;
+  renderFolderCompare();
+});
+document.getElementById('folderRight').addEventListener('change', e => {
+  folderState.right = readDirInput(e.target);
+  document.getElementById('folderRightInfo').textContent = `${folderState.right.size} files loaded`;
+  renderFolderCompare();
+});
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+async function renderFolderCompare() {
+  const wrap = document.getElementById('folderListWrap');
+  if (!folderState.left || !folderState.right) return;
+  wrap.innerHTML = '<div class="empty-state">Comparing…</div>';
+
+  const allPaths = new Set([...folderState.left.keys(), ...folderState.right.keys()]);
+  const rows = [];
+  for (const path of allPaths) {
+    const l = folderState.left.get(path);
+    const r = folderState.right.get(path);
+    if (l && !r) { rows.push({ path, status: 'removed' }); continue; }
+    if (!l && r) { rows.push({ path, status: 'added' }); continue; }
+    if (l.size === r.size && l.lastModified === r.lastModified) { rows.push({ path, status: 'same' }); continue; }
+    if (TEXT_EXT.test(path)) {
+      const [lt, rt] = await Promise.all([readFileAsText(l), readFileAsText(r)]);
+      rows.push({ path, status: lt === rt ? 'same' : 'modified', leftText: lt, rightText: rt, isText: true });
+    } else {
+      rows.push({ path, status: l.size === r.size ? 'same' : 'modified', isText: false });
+    }
+  }
+  rows.sort((a, b) => a.path.localeCompare(b.path));
+
+  const statusOrder = { modified: 0, added: 1, removed: 2, same: 3 };
+  rows.sort((a, b) => statusOrder[a.status] - statusOrder[b.status] || a.path.localeCompare(b.path));
+
+  let html = '<table class="flist"><thead><tr><th>Path</th><th>Status</th><th></th></tr></thead><tbody>';
+  rows.forEach((r, i) => {
+    html += `<tr><td>${escapeHtml(r.path)}</td><td><span class="badge ${r.status}">${r.status}</span></td><td>${r.status === 'modified' && r.isText ? `<a class="view-link" data-idx="${i}">View diff</a>` : ''}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll('.view-link').forEach(link => {
+    link.addEventListener('click', () => {
+      const r = rows[parseInt(link.dataset.idx, 10)];
+      openFolderDiffModal(r.path, r.leftText, r.rightText);
+    });
+  });
+
+  const counts = rows.reduce((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
+  const summary = document.createElement('div');
+  summary.className = 'stats-bar';
+  summary.innerHTML = `<span>${rows.length} files</span><span class="stat-add">${counts.added || 0} added</span><span class="stat-del">${counts.removed || 0} removed</span><span style="color:#9a6700">${counts.modified || 0} modified</span><span>${counts.same || 0} unchanged</span>`;
+  wrap.prepend(summary);
+}
+
+function openFolderDiffModal(path, leftText, rightText) {
+  document.getElementById('modalTitle').textContent = path;
+  const body = document.getElementById('modalBody');
+  const { ops, leftLines, rightLines } = computeLineDiff(leftText, rightText, {});
+  const rows = buildRows(ops, leftLines, rightLines);
+  const { leftHtml, rightHtml } = renderSideBySide(rows, 'word', false);
+  body.innerHTML = `<div class="diff-pane left" style="border-right:1px solid var(--border)">${leftHtml}</div><div class="diff-pane right">${rightHtml}</div>`;
+  document.getElementById('modalBackdrop').classList.add('open');
+}
+document.getElementById('modalClose').addEventListener('click', () => document.getElementById('modalBackdrop').classList.remove('open'));
+document.getElementById('modalBackdrop').addEventListener('click', e => { if (e.target.id === 'modalBackdrop') e.currentTarget.classList.remove('open'); });
+
+updateLineCounts();
+</script>
+</body>
+</html>
